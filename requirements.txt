@@ -4,6 +4,3 @@ torch
 pillow
 pytesseract
 speechrecognition
-fastapi
-uvicorn
-sqlite3
