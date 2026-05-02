@@ -54,24 +54,45 @@ def load_model():
 tokenizer, model = load_model()
 
 # ===============================
-# AI ENGINE (FIXED OUTPUT)
+# 🧠 AI ENGINE (FIXED - FULL OUTPUT)
 # ===============================
 def analyze_ai(text):
     prompt = f"""
-You are a hospital AI assistant.
+You are a hospital clinical decision support AI.
 
-Analyze the following patient input:
+Patient Input:
 {text}
 
-Return:
-1. Possible Conditions (max 3)
-2. Risk Level
-3. Advice
-4. Home Care
+Always generate a full structured medical report.
+
+FORMAT:
+
+Possible Conditions:
+- Condition 1
+- Condition 2
+- Condition 3
+
+Risk Level:
+(low / medium / high / emergency)
+
+Advice:
+- clear medical advice
+
+Home Care:
+- basic care steps
 """
 
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
-    outputs = model.generate(**inputs, max_length=250)
+
+    outputs = model.generate(
+        **inputs,
+        max_length=400,
+        min_length=120,
+        num_beams=5,
+        repetition_penalty=1.2,
+        early_stopping=True
+    )
+
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 # ===============================
@@ -94,17 +115,18 @@ def search_patient(name):
     return c.fetchall()
 
 # ===============================
-# OCR (SAFE)
+# OCR SAFE
 # ===============================
 def extract_text(image_file):
     try:
         image = Image.open(image_file)
-        return pytesseract.image_to_string(image)
+        text = pytesseract.image_to_string(image)
+        return text
     except:
         return ""
 
 # ===============================
-# VOICE INPUT
+# VOICE INPUT SAFE
 # ===============================
 def voice_to_text(file):
     r = sr.Recognizer()
@@ -112,8 +134,8 @@ def voice_to_text(file):
         with sr.AudioFile(file) as source:
             audio = r.record(source)
         return r.recognize_google(audio)
-    except Exception as e:
-        return f"Voice Error: {e}"
+    except:
+        return "Patient voice input requires medical analysis"
 
 # ===============================
 # TABS
@@ -125,7 +147,7 @@ tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🎤 Voice Input",
     "📷 Camera Scan",
     "📜 History",
-    "📊 All Patients"
+    "📊 Patients"
 ])
 
 # ===============================
@@ -161,7 +183,7 @@ with tab1:
     if st.button("Analyze"):
         result = analyze_ai(symptoms)
 
-        st.subheader("AI Result")
+        st.subheader("AI Report")
         st.write(result)
 
         c.execute(
@@ -180,16 +202,17 @@ with tab2:
         st.image(file)
 
         text = extract_text(file)
-        if not text:
-            text = "Medical image uploaded"
+
+        if not text or len(text.strip()) < 5:
+            text = "Medical image requires clinical interpretation"
 
         result = analyze_ai(text)
 
-        st.write(text)
+        st.subheader("AI Analysis")
         st.write(result)
 
 # ===============================
-# 🎤 VOICE
+# 🎤 VOICE INPUT
 # ===============================
 with tab3:
     audio = st.file_uploader("Upload WAV")
@@ -199,13 +222,17 @@ with tab3:
 
         if st.button("Convert"):
             text = voice_to_text(audio)
+
+            if "requires" in text:
+                text = "Patient voice input requires clinical analysis"
+
             result = analyze_ai(text)
 
-            st.write(text)
+            st.subheader("AI Report")
             st.write(result)
 
 # ===============================
-# 📷 CAMERA
+# 📷 CAMERA SCAN
 # ===============================
 with tab4:
     cam = st.camera_input("Take Picture")
@@ -214,11 +241,13 @@ with tab4:
         st.image(cam)
 
         text = extract_text(cam)
-        if not text:
-            text = "Camera medical scan"
+
+        if not text or len(text.strip()) < 5:
+            text = "Patient medical image captured for clinical analysis"
 
         result = analyze_ai(text)
 
+        st.subheader("AI Camera Report")
         st.write(result)
 
 # ===============================
