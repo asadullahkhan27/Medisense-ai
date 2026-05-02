@@ -1,12 +1,15 @@
 import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import datetime
+from PIL import Image
+import pytesseract
+import speech_recognition as sr
 
 # ===============================
 # PAGE CONFIG
 # ===============================
 st.set_page_config(
-    page_title="MediSense AI",
+    page_title="MediSense AI Pro",
     page_icon="🏥",
     layout="wide"
 )
@@ -24,111 +27,27 @@ def load_model():
 tokenizer, model = load_model()
 
 # ===============================
-# SESSION
+# SESSION STATE
 # ===============================
 if "history" not in st.session_state:
     st.session_state.history = []
 
 # ===============================
-# IMAGE HELPERS
+# AI CORE
 # ===============================
-def get_image(symptoms):
-    s = symptoms.lower()
-    if "chest" in s or "heart" in s:
-        return "https://source.unsplash.com/600x400/?heart,medical"
-    elif "fever" in s:
-        return "https://source.unsplash.com/600x400/?fever,patient"
-    elif "headache" in s:
-        return "https://source.unsplash.com/600x400/?headache"
-    elif "cough" in s:
-        return "https://source.unsplash.com/600x400/?cough"
-    return "https://source.unsplash.com/600x400/?hospital"
-
-# ===============================
-# RISK ANALYSIS
-# ===============================
-def severity_score(symptoms, temp, hr):
-    score = 0
-    s = symptoms.lower()
-
-    if temp > 39:
-        score += 3
-    elif temp > 38:
-        score += 2
-
-    if hr > 120:
-        score += 2
-
-    if "chest" in s:
-        score += 3
-    if "breath" in s:
-        score += 2
-    if "pain" in s:
-        score += 1
-
-    if score >= 6:
-        return "🔴 Emergency"
-    elif score >= 4:
-        return "🟠 High Risk"
-    elif score >= 2:
-        return "🟡 Medium Risk"
-    return "🟢 Low Risk"
-
-# ===============================
-# MEDICATION SUGGESTION (NEW FEATURE)
-# ===============================
-def suggest_medication(symptoms):
-    s = symptoms.lower()
-
-    meds = []
-
-    if "fever" in s:
-        meds.append("Paracetamol (for fever relief)")
-    if "headache" in s:
-        meds.append("Ibuprofen (pain relief)")
-    if "cough" in s:
-        meds.append("Dextromethorphan syrup (dry cough)")
-    if "cold" in s:
-        meds.append("Antihistamine (like Loratadine)")
-    if "body pain" in s:
-        meds.append("Acetaminophen / Ibuprofen")
-
-    if not meds:
-        return ["Consult doctor for proper prescription"]
-
-    return meds
-
-# ===============================
-# DOCTOR SUGGESTION
-# ===============================
-def doctor_recommendation(symptoms):
-    s = symptoms.lower()
-    if "chest" in s:
-        return "Cardiologist"
-    elif "skin" in s:
-        return "Dermatologist"
-    elif "eye" in s:
-        return "Ophthalmologist"
-    elif "fever" in s:
-        return "General Physician"
-    return "General Physician"
-
-# ===============================
-# AI REPORT
-# ===============================
-def analyze_ai(name, age, gender, symptoms):
+def analyze_ai(name, age, gender, text):
     prompt = f"""
-You are MediSense AI.
+You are MediSense AI Medical Assistant.
 
 Patient:
 Name: {name}
 Age: {age}
 Gender: {gender}
 
-Symptoms:
-{symptoms}
+Input:
+{text}
 
-Give:
+Return:
 - Possible Conditions (max 3)
 - Risk Level
 - Advice
@@ -140,20 +59,77 @@ Give:
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 # ===============================
-# IMAGE ANALYSIS (SIMULATED CAMERA FEATURE)
+# RISK ANALYSIS
 # ===============================
-def analyze_body_image(image_type):
-    if image_type == "Eyes":
-        return "Possible signs: fatigue, dehydration, or infection (non-diagnostic check)"
-    elif image_type == "Tongue":
-        return "Possible signs: dehydration, vitamin deficiency, or fever indicators"
-    return "No clear analysis available"
+def severity_score(text):
+    s = text.lower()
+    score = 0
+
+    if "fever" in s:
+        score += 2
+    if "chest" in s or "pain" in s:
+        score += 3
+    if "breath" in s:
+        score += 2
+    if "headache" in s:
+        score += 1
+
+    if score >= 5:
+        return "🔴 Emergency"
+    elif score >= 3:
+        return "🟠 High Risk"
+    elif score >= 1:
+        return "🟡 Medium Risk"
+    return "🟢 Low Risk"
+
+# ===============================
+# MEDICATION SUGGESTION
+# ===============================
+def suggest_medication(text):
+    s = text.lower()
+    meds = []
+
+    if "fever" in s:
+        meds.append("Paracetamol")
+    if "headache" in s:
+        meds.append("Ibuprofen")
+    if "cough" in s:
+        meds.append("Cough Syrup (Dextromethorphan)")
+    if "cold" in s:
+        meds.append("Antihistamine")
+
+    return meds if meds else ["Consult doctor"]
+
+# ===============================
+# OCR IMAGE ANALYSIS
+# ===============================
+def extract_text(image_file):
+    image = Image.open(image_file)
+    text = pytesseract.image_to_string(image)
+    return text
+
+# ===============================
+# VOICE INPUT (SAFE VERSION)
+# ===============================
+def voice_to_text():
+    r = sr.Recognizer()
+
+    try:
+        with sr.Microphone() as source:
+            st.info("Listening... Speak now")
+            audio = r.listen(source, timeout=5)
+
+        text = r.recognize_google(audio)
+        return text
+
+    except Exception as e:
+        return f"Voice error: {str(e)}"
 
 # ===============================
 # UI HEADER
 # ===============================
-st.title("🏥 MediSense AI")
-st.warning("Educational tool only. Not a medical diagnosis system.")
+st.title("🏥 MediSense AI Pro")
+st.warning("For educational use only. Not a medical diagnosis tool.")
 
 # ===============================
 # SIDEBAR
@@ -161,89 +137,114 @@ st.warning("Educational tool only. Not a medical diagnosis system.")
 st.sidebar.header("Patient Info")
 
 name = st.sidebar.text_input("Name")
-age = st.sidebar.number_input("Age", 1, 120)
+age = st.sidebar.number_input("Age", 1, 120, 25)
 gender = st.sidebar.selectbox("Gender", ["Male", "Female", "Other"])
-
-st.sidebar.header("Vitals")
-temp = st.sidebar.slider("Temperature (°C)", 35.0, 42.0, 37.0)
-hr = st.sidebar.slider("Heart Rate", 50, 150, 80)
 
 # ===============================
 # TABS
 # ===============================
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🧠 Analysis",
-    "💬 Chat",
-    "📷 Vision Check",
-    "📜 History"
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🧠 Symptom Analysis",
+    "💬 Chat AI",
+    "📷 Image Report",
+    "🎤 Voice Input",
+    "📊 History"
 ])
 
 # ===============================
-# TAB 1
+# TAB 1 - SYMPTOMS
 # ===============================
 with tab1:
     symptoms = st.text_area("Enter Symptoms")
-    run = st.button("Analyze")
 
-    if run and symptoms:
-
-        ai_report = analyze_ai(name, age, gender, symptoms)
-        risk = severity_score(symptoms, temp, hr)
+    if st.button("Analyze Symptoms"):
+        result = analyze_ai(name, age, gender, symptoms)
+        risk = severity_score(symptoms)
         meds = suggest_medication(symptoms)
-        doc = doctor_recommendation(symptoms)
 
         st.subheader("Risk Level")
         st.write(risk)
 
-        st.subheader("Recommended Doctor")
-        st.info(doc)
-
-        st.subheader("Suggested Medication (Basic Guidance)")
-        for m in meds:
-            st.write("•", m)
+        st.subheader("Medication Suggestion")
+        st.write(meds)
 
         st.subheader("AI Report")
-        st.write(ai_report)
+        st.write(result)
 
         st.session_state.history.append({
             "time": str(datetime.datetime.now()),
-            "name": name,
-            "symptoms": symptoms,
-            "risk": risk
+            "input": symptoms,
+            "type": "text"
         })
 
 # ===============================
-# TAB 2
+# TAB 2 - CHAT
 # ===============================
 with tab2:
-    chat_input = st.text_input("Ask AI Doctor")
+    chat = st.text_input("Ask AI Doctor")
 
     if st.button("Send"):
-        response = analyze_ai(name, age, gender, chat_input)
-        st.write(response)
+        reply = analyze_ai(name, age, gender, chat)
+        st.write(reply)
 
 # ===============================
-# TAB 3 (VISION FEATURE)
+# TAB 3 - IMAGE REPORT OCR
 # ===============================
 with tab3:
-    st.subheader("Upload Eye / Tongue Image")
+    st.subheader("Upload Medical / Excel Screenshot")
 
-    img_type = st.selectbox("Select Check Type", ["Eyes", "Tongue"])
+    file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
-    camera = st.camera_input("Capture Image")
+    if file:
+        st.image(file)
 
-    if camera:
-        st.image(camera)
+        text = extract_text(file)
 
-        result = analyze_body_image(img_type)
+        st.subheader("Extracted Text")
+        st.write(text)
 
-        st.subheader("AI Visual Analysis (Non-Diagnostic)")
-        st.info(result)
+        if text:
+            analysis = analyze_ai(name, age, gender, text)
+
+            st.subheader("AI Analysis")
+            st.write(analysis)
+
+            st.session_state.history.append({
+                "time": str(datetime.datetime.now()),
+                "input": text,
+                "type": "image"
+            })
 
 # ===============================
-# TAB 4
+# TAB 4 - VOICE INPUT
 # ===============================
 with tab4:
+    st.subheader("Voice Symptom Input")
+
+    if st.button("Start Voice Recording"):
+        spoken = voice_to_text()
+
+        st.write("You said:")
+        st.success(spoken)
+
+        if spoken:
+            result = analyze_ai(name, age, gender, spoken)
+
+            st.subheader("AI Analysis")
+            st.write(result)
+
+            st.session_state.history.append({
+                "time": str(datetime.datetime.now()),
+                "input": spoken,
+                "type": "voice"
+            })
+
+# ===============================
+# TAB 5 - HISTORY
+# ===============================
+with tab5:
+    st.subheader("Patient History")
+
     if not st.session_state.history:
         st.info("No history yet")
     else:
