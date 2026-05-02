@@ -2,5 +2,5 @@ streamlit
 transformers
 torch
 pillow
-pytesseract
-SpeechRecognition
+requests
+accelerate
