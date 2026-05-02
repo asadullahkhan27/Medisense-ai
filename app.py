@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # ===============================
-# LOAD MODEL
+# MODEL LOAD
 # ===============================
 @st.cache_resource
 def load_model():
@@ -27,17 +27,17 @@ def load_model():
 tokenizer, model = load_model()
 
 # ===============================
-# SESSION STATE
+# HISTORY
 # ===============================
 if "history" not in st.session_state:
     st.session_state.history = []
 
 # ===============================
-# AI FUNCTION
+# AI CORE
 # ===============================
 def analyze_ai(name, age, gender, text):
     prompt = f"""
-You are a medical assistant AI.
+You are a medical AI assistant.
 
 Patient:
 Name: {name}
@@ -47,7 +47,7 @@ Gender: {gender}
 Input:
 {text}
 
-Return:
+Give:
 - Possible Conditions (max 3)
 - Risk Level
 - Advice
@@ -59,7 +59,7 @@ Return:
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 # ===============================
-# RISK LEVEL
+# RISK SCORE
 # ===============================
 def severity_score(text):
     s = text.lower()
@@ -83,7 +83,7 @@ def severity_score(text):
     return "🟢 Low Risk"
 
 # ===============================
-# MEDICATION SUGGESTION
+# MEDICATION
 # ===============================
 def suggest_medication(text):
     s = text.lower()
@@ -98,7 +98,7 @@ def suggest_medication(text):
     if "cold" in s:
         meds.append("Antihistamine")
 
-    return meds if meds else ["Consult a doctor"]
+    return meds if meds else ["Consult doctor"]
 
 # ===============================
 # OCR IMAGE
@@ -106,23 +106,19 @@ def suggest_medication(text):
 def extract_text(image_file):
     try:
         image = Image.open(image_file)
-        text = pytesseract.image_to_string(image)
-        return text
+        return pytesseract.image_to_string(image)
     except Exception as e:
-        return f"OCR Error: {str(e)}"
+        return ""
 
 # ===============================
 # VOICE FILE INPUT (SAFE)
 # ===============================
 def voice_to_text(audio_file):
     r = sr.Recognizer()
-
     try:
         with sr.AudioFile(audio_file) as source:
             audio = r.record(source)
-
         return r.recognize_google(audio)
-
     except Exception as e:
         return f"Voice Error: {str(e)}"
 
@@ -133,7 +129,7 @@ st.title("🏥 MediSense AI Pro")
 st.warning("Educational use only. Not a medical diagnosis tool.")
 
 # ===============================
-# SIDEBAR
+# USER INFO
 # ===============================
 st.sidebar.header("Patient Info")
 
@@ -145,10 +141,10 @@ gender = st.sidebar.selectbox("Gender", ["Male", "Female", "Other"])
 # TABS
 # ===============================
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "🧠 Symptom Analysis",
-    "💬 Chat AI",
+    "🧠 Symptoms",
+    "💬 Chat",
     "📷 Image Report",
-    "🎤 Voice Input",
+    "🎤 Voice",
     "📜 History",
     "📷 Camera Scan"
 ])
@@ -202,26 +198,28 @@ with tab3:
 
         text = extract_text(file)
 
+        if not text.strip():
+            text = "Medical image uploaded for analysis (no readable text found)."
+
         st.subheader("Extracted Text")
         st.write(text)
 
-        if text:
-            result = analyze_ai(name, age, gender, text)
+        result = analyze_ai(name, age, gender, text)
 
-            st.subheader("AI Analysis")
-            st.write(result)
+        st.subheader("AI Analysis")
+        st.write(result)
 
-            st.session_state.history.append({
-                "time": str(datetime.datetime.now()),
-                "input": text,
-                "type": "image"
-            })
+        st.session_state.history.append({
+            "time": str(datetime.datetime.now()),
+            "input": text,
+            "type": "image"
+        })
 
 # ===============================
-# TAB 4 (VOICE FILE)
+# TAB 4 (VOICE FIXED)
 # ===============================
 with tab4:
-    st.subheader("Upload Voice (WAV file)")
+    st.subheader("Upload Voice (WAV)")
 
     audio_file = st.file_uploader("Upload audio", type=["wav"])
 
@@ -234,17 +232,16 @@ with tab4:
             st.success("Converted Text")
             st.write(text)
 
-            if text:
-                result = analyze_ai(name, age, gender, text)
+            result = analyze_ai(name, age, gender, text)
 
-                st.subheader("AI Analysis")
-                st.write(result)
+            st.subheader("AI Analysis")
+            st.write(result)
 
-                st.session_state.history.append({
-                    "time": str(datetime.datetime.now()),
-                    "input": text,
-                    "type": "voice"
-                })
+            st.session_state.history.append({
+                "time": str(datetime.datetime.now()),
+                "input": text,
+                "type": "voice"
+            })
 
 # ===============================
 # TAB 5 (HISTORY)
@@ -259,21 +256,26 @@ with tab5:
             st.write(h)
 
 # ===============================
-# TAB 6 (CAMERA)
+# TAB 6 (CAMERA FIXED)
 # ===============================
 with tab6:
-    st.subheader("📷 Camera Health Scan")
+    st.subheader("📷 Camera Scan")
 
-    cam = st.camera_input("Take a picture")
+    cam = st.camera_input("Capture Image")
 
     if cam:
         st.image(cam)
 
-        try:
-            image = Image.open(cam)
-            text = pytesseract.image_to_string(image)
-        except:
-            text = "Camera image captured"
+        image = Image.open(cam)
+
+        text = pytesseract.image_to_string(image)
+
+        if not text.strip():
+            text = """
+            Medical image captured via camera.
+            Analyze for possible signs of:
+            fatigue, dehydration, infection, or abnormalities.
+            """
 
         result = analyze_ai(name, age, gender, text)
 
