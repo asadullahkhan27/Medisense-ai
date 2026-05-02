@@ -9,8 +9,8 @@ import speech_recognition as sr
 # ===============================
 # APP CONFIG
 # ===============================
-st.set_page_config(page_title="Hospital AI System", layout="wide")
-st.title("🏥 Hospital AI + Patient Management System")
+st.set_page_config(page_title="Fast Hospital AI", layout="wide")
+st.title("🏥 Fast Hospital AI System")
 
 # ===============================
 # DATABASE
@@ -42,11 +42,11 @@ CREATE TABLE IF NOT EXISTS history (
 conn.commit()
 
 # ===============================
-# MODEL LOAD
+# FAST MODEL LOAD
 # ===============================
 @st.cache_resource
 def load_model():
-    model_name = "google/flan-t5-base"
+    model_name = "google/flan-t5-small"   # ⚡ FAST MODEL
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     return tokenizer, model
@@ -54,29 +54,28 @@ def load_model():
 tokenizer, model = load_model()
 
 # ===============================
-# 🧠 AI ENGINE (FIXED - FULL OUTPUT)
+# ⚡ FAST AI ENGINE
 # ===============================
+@st.cache_data
 def analyze_ai(text):
     prompt = f"""
-You are a hospital clinical decision support AI.
+You are a hospital AI assistant.
 
 Patient Input:
 {text}
 
-Always generate a full structured medical report.
-
-FORMAT:
+Return:
 
 Possible Conditions:
-- Condition 1
-- Condition 2
-- Condition 3
+- condition 1
+- condition 2
+- condition 3
 
 Risk Level:
 (low / medium / high / emergency)
 
 Advice:
-- clear medical advice
+- short medical advice
 
 Home Care:
 - basic care steps
@@ -86,11 +85,10 @@ Home Care:
 
     outputs = model.generate(
         **inputs,
-        max_length=400,
-        min_length=120,
-        num_beams=5,
-        repetition_penalty=1.2,
-        early_stopping=True
+        max_length=180,   # ⚡ FAST
+        min_length=60,
+        num_beams=2,      # ⚡ FAST
+        do_sample=False
     )
 
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -120,13 +118,12 @@ def search_patient(name):
 def extract_text(image_file):
     try:
         image = Image.open(image_file)
-        text = pytesseract.image_to_string(image)
-        return text
+        return pytesseract.image_to_string(image)
     except:
         return ""
 
 # ===============================
-# VOICE INPUT SAFE
+# VOICE SAFE
 # ===============================
 def voice_to_text(file):
     r = sr.Recognizer()
@@ -135,7 +132,7 @@ def voice_to_text(file):
             audio = r.record(source)
         return r.recognize_google(audio)
     except:
-        return "Patient voice input requires medical analysis"
+        return "Voice input detected"
 
 # ===============================
 # TABS
@@ -172,16 +169,17 @@ with tab0:
     if st.button("Search"):
         results = search_patient(search)
         for r in results:
-            st.write(f"ID: {r[0]} | {r[1]} | {r[2]} | {r[3]}")
+            st.write(f"ID: {r[0]} | {r[1]} | Age: {r[2]} | {r[3]}")
 
 # ===============================
-# 🧠 AI DIAGNOSIS
+# 🧠 AI DIAGNOSIS (FAST)
 # ===============================
 with tab1:
     symptoms = st.text_area("Enter Symptoms")
 
     if st.button("Analyze"):
-        result = analyze_ai(symptoms)
+        with st.spinner("Analyzing..."):
+            result = analyze_ai(symptoms)
 
         st.subheader("AI Report")
         st.write(result)
@@ -204,11 +202,11 @@ with tab2:
         text = extract_text(file)
 
         if not text or len(text.strip()) < 5:
-            text = "Medical image requires clinical interpretation"
+            text = "Medical image analysis required"
 
-        result = analyze_ai(text)
+        with st.spinner("Analyzing image..."):
+            result = analyze_ai(text)
 
-        st.subheader("AI Analysis")
         st.write(result)
 
 # ===============================
@@ -222,13 +220,8 @@ with tab3:
 
         if st.button("Convert"):
             text = voice_to_text(audio)
-
-            if "requires" in text:
-                text = "Patient voice input requires clinical analysis"
-
             result = analyze_ai(text)
 
-            st.subheader("AI Report")
             st.write(result)
 
 # ===============================
@@ -243,11 +236,11 @@ with tab4:
         text = extract_text(cam)
 
         if not text or len(text.strip()) < 5:
-            text = "Patient medical image captured for clinical analysis"
+            text = "Camera medical scan requires analysis"
 
-        result = analyze_ai(text)
+        with st.spinner("Analyzing camera..."):
+            result = analyze_ai(text)
 
-        st.subheader("AI Camera Report")
         st.write(result)
 
 # ===============================
@@ -261,7 +254,7 @@ with tab5:
         st.write(d)
 
 # ===============================
-# 📊 PATIENT LIST
+# 📊 PATIENTS
 # ===============================
 with tab6:
     patients = get_patients()
