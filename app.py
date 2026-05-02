@@ -1,289 +1,163 @@
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-import datetime
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSeq2SeqLM,
+    BlipProcessor,
+    BlipForConditionalGeneration
+)
 from PIL import Image
-import pytesseract
-import speech_recognition as sr
+import torch
 
 # ===============================
 # PAGE CONFIG
 # ===============================
-st.set_page_config(
-    page_title="MediSense AI Pro",
-    page_icon="🏥",
-    layout="wide"
-)
+st.set_page_config(page_title="Hospital AI System", layout="wide")
+
+st.title("🏥 Hospital-Grade AI Assistant System")
 
 # ===============================
-# MODEL LOAD
+# LOAD TEXT MODEL (Bio/Medical style)
 # ===============================
 @st.cache_resource
-def load_model():
+def load_text_model():
     model_name = "google/flan-t5-base"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     return tokenizer, model
 
-tokenizer, model = load_model()
+tokenizer, text_model = load_text_model()
 
 # ===============================
-# HISTORY
+# LOAD VISION MODEL (BLIP)
 # ===============================
-if "history" not in st.session_state:
-    st.session_state.history = []
+@st.cache_resource
+def load_vision_model():
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+    return processor, model
+
+processor, vision_model = load_vision_model()
 
 # ===============================
-# AI CORE
+# 🧠 MEDICAL TEXT AI (BioGPT STYLE SIMULATION)
 # ===============================
-def analyze_ai(name, age, gender, text):
+def medical_ai(text):
     prompt = f"""
-You are a medical AI assistant.
+You are a medical AI trained on clinical knowledge (PubMed style reasoning).
 
-Patient:
-Name: {name}
-Age: {age}
-Gender: {gender}
-
-Input:
+Patient input:
 {text}
 
-Give:
-- Possible Conditions (max 3)
-- Risk Level
-- Advice
-- Home Care
+Return:
+1. Possible Conditions
+2. Severity Level
+3. Recommended Action
+4. Medical Advice
 """
 
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
-    outputs = model.generate(**inputs, max_length=250)
+    outputs = text_model.generate(**inputs, max_length=300)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 # ===============================
-# RISK SCORE
+# 📷 VISION AI (BLIP)
 # ===============================
-def severity_score(text):
-    s = text.lower()
-    score = 0
-
-    if "fever" in s:
-        score += 2
-    if "chest" in s or "pain" in s:
-        score += 3
-    if "breath" in s:
-        score += 2
-    if "headache" in s:
-        score += 1
-
-    if score >= 5:
-        return "🔴 Emergency"
-    elif score >= 3:
-        return "🟠 High Risk"
-    elif score >= 1:
-        return "🟡 Medium Risk"
-    return "🟢 Low Risk"
+def vision_ai(image):
+    inputs = processor(image, return_tensors="pt")
+    out = vision_model.generate(**inputs)
+    return processor.decode(out[0], skip_special_tokens=True)
 
 # ===============================
-# MEDICATION
+# 👁 EYE DISEASE DETECTION (SIMULATED)
 # ===============================
-def suggest_medication(text):
-    s = text.lower()
-    meds = []
+def eye_analysis(description):
+    text = description.lower()
 
-    if "fever" in s:
-        meds.append("Paracetamol")
-    if "headache" in s:
-        meds.append("Ibuprofen")
-    if "cough" in s:
-        meds.append("Cough Syrup")
-    if "cold" in s:
-        meds.append("Antihistamine")
-
-    return meds if meds else ["Consult doctor"]
+    if "red" in text or "swollen" in text:
+        return "Possible Eye Infection / Conjunctivitis"
+    if "yellow" in text:
+        return "Possible Jaundice Indicator"
+    return "No clear eye disease detected"
 
 # ===============================
-# OCR IMAGE
+# 👅 TONGUE ANALYSIS (SIMULATED CLINICAL RULES)
 # ===============================
-def extract_text(image_file):
-    try:
-        image = Image.open(image_file)
-        return pytesseract.image_to_string(image)
-    except Exception as e:
-        return ""
+def tongue_analysis(description):
+    text = description.lower()
+
+    if "white" in text:
+        return "Possible dehydration or fungal infection"
+    if "red" in text:
+        return "Possible fever or inflammation"
+    return "Normal / No abnormal signs detected"
 
 # ===============================
-# VOICE FILE INPUT (SAFE)
+# UI TABS
 # ===============================
-def voice_to_text(audio_file):
-    r = sr.Recognizer()
-    try:
-        with sr.AudioFile(audio_file) as source:
-            audio = r.record(source)
-        return r.recognize_google(audio)
-    except Exception as e:
-        return f"Voice Error: {str(e)}"
-
-# ===============================
-# HEADER
-# ===============================
-st.title("🏥 MediSense AI Pro")
-st.warning("Educational use only. Not a medical diagnosis tool.")
-
-# ===============================
-# USER INFO
-# ===============================
-st.sidebar.header("Patient Info")
-
-name = st.sidebar.text_input("Name")
-age = st.sidebar.number_input("Age", 1, 120, 25)
-gender = st.sidebar.selectbox("Gender", ["Male", "Female", "Other"])
-
-# ===============================
-# TABS
-# ===============================
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "🧠 Symptoms",
-    "💬 Chat",
-    "📷 Image Report",
-    "🎤 Voice",
-    "📜 History",
-    "📷 Camera Scan"
+tab1, tab2, tab3 = st.tabs([
+    "🧠 Medical AI",
+    "📷 Vision AI",
+    "🏥 Full Health Scan"
 ])
 
 # ===============================
-# TAB 1
+# 🧠 TAB 1 - MEDICAL AI
 # ===============================
 with tab1:
-    symptoms = st.text_area("Enter Symptoms")
+    text = st.text_area("Enter Symptoms")
 
     if st.button("Analyze"):
-        result = analyze_ai(name, age, gender, symptoms)
-        risk = severity_score(symptoms)
-        meds = suggest_medication(symptoms)
-
-        st.subheader("Risk Level")
-        st.write(risk)
-
-        st.subheader("Medication")
-        st.write(meds)
-
-        st.subheader("AI Report")
+        result = medical_ai(text)
         st.write(result)
 
-        st.session_state.history.append({
-            "time": str(datetime.datetime.now()),
-            "input": symptoms,
-            "type": "text"
-        })
-
 # ===============================
-# TAB 2
+# 📷 TAB 2 - VISION AI
 # ===============================
 with tab2:
-    chat = st.text_input("Ask AI Doctor")
+    image_file = st.file_uploader("Upload Medical Image", type=["png", "jpg", "jpeg"])
 
-    if st.button("Send"):
-        reply = analyze_ai(name, age, gender, chat)
-        st.write(reply)
+    if image_file:
+        image = Image.open(image_file)
+        st.image(image)
+
+        caption = vision_ai(image)
+
+        st.subheader("AI Vision Description")
+        st.write(caption)
+
+        st.subheader("Eye Analysis")
+        st.write(eye_analysis(caption))
+
+        st.subheader("Tongue Analysis")
+        st.write(tongue_analysis(caption))
 
 # ===============================
-# TAB 3 (OCR IMAGE)
+# 🏥 TAB 3 - FULL SYSTEM
 # ===============================
 with tab3:
-    st.subheader("Upload Medical / Excel Image")
+    st.subheader("Complete Hospital AI Scan")
 
-    file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
+    text_input = st.text_area("Symptoms Input")
+    image_input = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
-    if file:
-        st.image(file)
+    if st.button("Run Full Analysis"):
 
-        text = extract_text(file)
+        # TEXT AI
+        text_result = medical_ai(text_input)
 
-        if not text.strip():
-            text = "Medical image uploaded for analysis (no readable text found)."
+        st.subheader("🧠 Medical AI Result")
+        st.write(text_result)
 
-        st.subheader("Extracted Text")
-        st.write(text)
+        # IMAGE AI
+        if image_input:
+            image = Image.open(image_input)
+            caption = vision_ai(image)
 
-        result = analyze_ai(name, age, gender, text)
+            st.subheader("📷 Vision AI Result")
+            st.write(caption)
 
-        st.subheader("AI Analysis")
-        st.write(result)
+            st.subheader("👁 Eye Analysis")
+            st.write(eye_analysis(caption))
 
-        st.session_state.history.append({
-            "time": str(datetime.datetime.now()),
-            "input": text,
-            "type": "image"
-        })
-
-# ===============================
-# TAB 4 (VOICE FIXED)
-# ===============================
-with tab4:
-    st.subheader("Upload Voice (WAV)")
-
-    audio_file = st.file_uploader("Upload audio", type=["wav"])
-
-    if audio_file:
-        st.audio(audio_file)
-
-        if st.button("Convert Voice"):
-            text = voice_to_text(audio_file)
-
-            st.success("Converted Text")
-            st.write(text)
-
-            result = analyze_ai(name, age, gender, text)
-
-            st.subheader("AI Analysis")
-            st.write(result)
-
-            st.session_state.history.append({
-                "time": str(datetime.datetime.now()),
-                "input": text,
-                "type": "voice"
-            })
-
-# ===============================
-# TAB 5 (HISTORY)
-# ===============================
-with tab5:
-    st.subheader("History")
-
-    if not st.session_state.history:
-        st.info("No history yet")
-    else:
-        for h in reversed(st.session_state.history):
-            st.write(h)
-
-# ===============================
-# TAB 6 (CAMERA FIXED)
-# ===============================
-with tab6:
-    st.subheader("📷 Camera Scan")
-
-    cam = st.camera_input("Capture Image")
-
-    if cam:
-        st.image(cam)
-
-        image = Image.open(cam)
-
-        text = pytesseract.image_to_string(image)
-
-        if not text.strip():
-            text = """
-            Medical image captured via camera.
-            Analyze for possible signs of:
-            fatigue, dehydration, infection, or abnormalities.
-            """
-
-        result = analyze_ai(name, age, gender, text)
-
-        st.subheader("AI Camera Analysis")
-        st.write(result)
-
-        st.session_state.history.append({
-            "time": str(datetime.datetime.now()),
-            "input": "camera scan",
-            "type": "camera"
-        })
+            st.subheader("👅 Tongue Analysis")
+            st.write(tongue_analysis(caption))
