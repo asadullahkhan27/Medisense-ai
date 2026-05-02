@@ -5,14 +5,10 @@ import datetime
 # ===============================
 # Page Config
 # ===============================
-st.set_page_config(
-    page_title="MediSense AI",
-    page_icon="🏥",
-    layout="wide"
-)
+st.set_page_config(page_title="MediSense AI", page_icon="🏥", layout="wide")
 
 # ===============================
-# Model Load (Cache)
+# Load Model
 # ===============================
 @st.cache_resource
 def load_model():
@@ -30,166 +26,168 @@ if "history" not in st.session_state:
     st.session_state.history = []
 
 # ===============================
-# Helpers
+# Helper Functions
 # ===============================
 def get_image(symptoms):
     s = symptoms.lower()
-
-    if "chest" in s or "heart" in s:
-        return "https://source.unsplash.com/600x400/?heart,medical"
+    if "chest" in s:
+        return "https://source.unsplash.com/600x400/?heart"
     elif "fever" in s:
-        return "https://source.unsplash.com/600x400/?fever,patient"
+        return "https://source.unsplash.com/600x400/?fever"
     elif "headache" in s:
         return "https://source.unsplash.com/600x400/?headache"
-    elif "cough" in s:
-        return "https://source.unsplash.com/600x400/?cough,doctor"
     else:
         return "https://source.unsplash.com/600x400/?hospital"
 
-def get_risk_badge(text):
-    t = text.lower()
-    if "emergency" in t:
+def calculate_severity(temp, hr):
+    if temp > 39 or hr > 120:
         return "🔴 Emergency"
-    elif "high" in t:
-        return "🟠 High Risk"
-    elif "medium" in t:
-        return "🟡 Medium Risk"
+    elif temp > 38:
+        return "🟠 High"
+    elif temp > 37:
+        return "🟡 Medium"
     else:
-        return "🟢 Low Risk"
+        return "🟢 Low"
+
+def recommend_doctor(symptoms):
+    s = symptoms.lower()
+    if "chest" in s:
+        return "Cardiologist"
+    elif "skin" in s:
+        return "Dermatologist"
+    elif "fever" in s:
+        return "General Physician"
+    else:
+        return "General Doctor"
 
 def analyze(name, age, gender, symptoms):
-
     prompt = f"""
-You are MediSense AI, a Clinical Decision Support System.
+You are MediSense AI.
 
 Patient:
-Name: {name}
-Age: {age}
-Gender: {gender}
+{name}, {age}, {gender}
 
 Symptoms:
 {symptoms}
 
-Provide:
-- Possible Conditions (max 3)
+Give:
+- Conditions
 - Risk Level
-- Specialist
 - Advice
 - Home Care
 """
 
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
 
-    outputs = model.generate(
-        **inputs,
-        max_length=250,
-        do_sample=True,
-        temperature=0.7
-    )
+    outputs = model.generate(**inputs, max_length=200)
 
-    result = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-    return result
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 # ===============================
-# UI
+# UI HEADER
 # ===============================
 st.title("🏥 MediSense AI")
-st.subheader("Clinical Decision Support System (CDSS)")
+st.caption("Clinical Decision Support System")
 
-st.warning("⚠️ This tool is for educational purposes only.")
+st.warning("⚠️ Not a replacement for real doctors")
 
-# Sidebar
-st.sidebar.header("Patient Info")
+# ===============================
+# SIDEBAR (Vitals)
+# ===============================
+st.sidebar.header("Patient Details")
 
 name = st.sidebar.text_input("Name")
-age = st.sidebar.number_input("Age", min_value=1, max_value=120)
+age = st.sidebar.number_input("Age", 1, 120)
 gender = st.sidebar.selectbox("Gender", ["Male", "Female", "Other"])
 
-st.sidebar.markdown("---")
-st.sidebar.info("Enter symptoms in main panel")
-
-# Main Layout
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("🧠 Enter Symptoms")
-    symptoms = st.text_area("Describe symptoms", height=150)
-
-    analyze_btn = st.button("Analyze Symptoms")
-
-with col2:
-    st.subheader("📊 Results")
-
-    if analyze_btn and symptoms:
-
-        with st.spinner("Analyzing..."):
-            result = analyze(name, age, gender, symptoms)
-
-        # Risk Badge
-        risk = get_risk_badge(result)
-        st.markdown(f"### Risk Level: {risk}")
-
-        # Image
-        image_url = get_image(symptoms)
-        st.image(image_url, use_column_width=True)
-
-        # Report
-        st.text_area("Medical Report", result, height=250)
-
-        # Download
-        st.download_button(
-            label="Download Report",
-            data=result,
-            file_name="medical_report.txt",
-            mime="text/plain"
-        )
-
-        # Save history
-        st.session_state.history.append({
-            "time": str(datetime.datetime.now()),
-            "name": name,
-            "symptoms": symptoms,
-            "report": result
-        })
+st.sidebar.header("Vitals")
+temp = st.sidebar.slider("Temperature (°C)", 35.0, 42.0, 37.0)
+hr = st.sidebar.slider("Heart Rate", 50, 150, 80)
+bp = st.sidebar.text_input("Blood Pressure (e.g. 120/80)")
 
 # ===============================
-# History Section
+# TABS
 # ===============================
-st.markdown("---")
-st.subheader("📜 Patient History")
+tab1, tab2, tab3 = st.tabs(["🧠 Analysis", "📜 History", "ℹ️ About"])
 
-if st.button("Load History"):
+# ===============================
+# TAB 1: ANALYSIS
+# ===============================
+with tab1:
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        symptoms = st.text_area("Enter Symptoms", height=150)
+        run = st.button("Run Analysis")
+
+    with col2:
+        if run and symptoms:
+
+            with st.spinner("Analyzing..."):
+                result = analyze(name, age, gender, symptoms)
+
+            severity = calculate_severity(temp, hr)
+            doctor = recommend_doctor(symptoms)
+            image = get_image(symptoms)
+
+            # Emergency Alert
+            if "🔴" in severity:
+                st.error("🚨 EMERGENCY: Seek immediate medical help!")
+
+            st.subheader("Risk Level")
+            st.markdown(f"### {severity}")
+
+            st.subheader("Recommended Doctor")
+            st.info(doctor)
+
+            st.image(image)
+
+            st.subheader("Medical Report")
+            st.write(result)
+
+            # Download
+            st.download_button(
+                "Download Report",
+                data=result,
+                file_name="report.txt"
+            )
+
+            # Save history
+            st.session_state.history.append({
+                "time": str(datetime.datetime.now()),
+                "name": name,
+                "symptoms": symptoms,
+                "severity": severity
+            })
+
+# ===============================
+# TAB 2: HISTORY
+# ===============================
+with tab2:
+
     if not st.session_state.history:
         st.info("No history yet")
     else:
-        for h in st.session_state.history[-5:]:
-            st.markdown(f"""
-**Time:** {h['time']}  
-**Name:** {h['name']}  
-**Symptoms:** {h['symptoms']}  
----  
-""")
+        for h in st.session_state.history[::-1]:
+            with st.expander(f"{h['name']} | {h['time']}"):
+                st.write(f"Symptoms: {h['symptoms']}")
+                st.write(f"Severity: {h['severity']}")
 
 # ===============================
-# About
+# TAB 3: ABOUT
 # ===============================
-st.markdown("---")
-st.subheader("ℹ️ About")
+with tab3:
 
-st.markdown("""
-MediSense AI is an AI-powered healthcare assistant built using Hugging Face Transformers.
+    st.markdown("""
+### MediSense AI
+
+AI-powered clinical assistant using NLP.
 
 **Features:**
 - Symptom Analysis  
-- Risk Classification  
-- Medical Visualization  
-- Downloadable Reports  
-- Patient History  
-
-**Tech Stack:**
-- Python  
-- Streamlit  
-- Hugging Face  
-- PyTorch  
+- Risk Detection  
+- Doctor Recommendation  
+- Vital Monitoring  
+- History Tracking  
 """)
