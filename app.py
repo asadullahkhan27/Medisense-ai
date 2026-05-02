@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 # ===============================
-# LOAD MODEL
+# MODEL LOAD
 # ===============================
 @st.cache_resource
 def load_model():
@@ -30,11 +30,31 @@ if "history" not in st.session_state:
     st.session_state.history = []
 
 # ===============================
-# HELPERS
+# SYMPTOM → DISEASE MAPPING (LOGIC ENGINE)
+# ===============================
+def symptom_prediction(symptoms):
+    s = symptoms.lower()
+
+    if "cough" in s and "fever" in s:
+        return "Flu / Viral Infection / Seasonal Cold"
+    elif "cough" in s:
+        return "Common Cold / Weather Infection"
+    elif "fever" in s:
+        return "Viral Fever / Infection"
+    elif "headache" in s:
+        return "Migraine / Stress / Dehydration"
+    elif "chest" in s or "heart" in s:
+        return "Heart-related issue / Anxiety"
+    else:
+        return "General Infection / Needs Medical Check"
+
+# ===============================
+# IMAGE SELECTOR
 # ===============================
 def get_image(symptoms):
     s = symptoms.lower()
-    if "chest" in s or "heart" in s:
+
+    if "chest" in s:
         return "https://source.unsplash.com/600x400/?heart,medical"
     elif "fever" in s:
         return "https://source.unsplash.com/600x400/?fever,patient"
@@ -42,9 +62,13 @@ def get_image(symptoms):
         return "https://source.unsplash.com/600x400/?headache"
     elif "cough" in s:
         return "https://source.unsplash.com/600x400/?cough"
-    return "https://source.unsplash.com/600x400/?hospital"
+    else:
+        return "https://source.unsplash.com/600x400/?hospital"
 
-def severity_score(symptoms, temp, hr):
+# ===============================
+# RISK ENGINE
+# ===============================
+def risk_level(symptoms, temp, hr):
     score = 0
 
     if temp > 39:
@@ -57,8 +81,6 @@ def severity_score(symptoms, temp, hr):
 
     if "chest" in symptoms.lower():
         score += 3
-    if "breath" in symptoms.lower():
-        score += 2
 
     if score >= 6:
         return "🔴 Emergency"
@@ -66,8 +88,12 @@ def severity_score(symptoms, temp, hr):
         return "🟠 High Risk"
     elif score >= 2:
         return "🟡 Medium Risk"
-    return "🟢 Low Risk"
+    else:
+        return "🟢 Low Risk"
 
+# ===============================
+# IMMUNITY ENGINE
+# ===============================
 def immunity_score(diet, sleep, exercise):
     score = 0
 
@@ -90,21 +116,14 @@ def immunity_score(diet, sleep, exercise):
         return "🟢 Strong Immunity"
     elif score >= 3:
         return "🟡 Moderate Immunity"
-    return "🔴 Weak Immunity"
+    else:
+        return "🔴 Weak Immunity"
 
-def doctor_recommendation(symptoms):
-    s = symptoms.lower()
-    if "chest" in s:
-        return "Cardiologist"
-    elif "skin" in s:
-        return "Dermatologist"
-    elif "eye" in s:
-        return "Ophthalmologist"
-    elif "fever" in s:
-        return "General Physician"
-    return "General Physician"
+# ===============================
+# AI MODEL
+# ===============================
+def ai_analysis(name, age, gender, symptoms):
 
-def analyze_ai(name, age, gender, symptoms):
     prompt = f"""
 You are MediSense AI Medical Assistant.
 
@@ -116,29 +135,37 @@ Gender: {gender}
 Symptoms:
 {symptoms}
 
-Give structured medical analysis:
-- Possible Conditions (max 3)
+Provide:
+- Possible Conditions
 - Risk Level
+- Doctor Recommendation
 - Advice
 - Home Care
 """
 
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
-    outputs = model.generate(**inputs, max_length=250)
+
+    outputs = model.generate(
+        **inputs,
+        max_length=250,
+        do_sample=True,
+        temperature=0.7
+    )
+
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 # ===============================
 # UI HEADER
 # ===============================
 st.title("🏥 MediSense AI")
-st.caption("Clinical Decision Support + Lifestyle Health Intelligence System")
+st.caption("Clinical Decision Support System + AI Health Intelligence")
 
-st.warning("⚠️ Educational use only. Not a replacement for medical advice.")
+st.warning("⚠️ This system is for educational purposes only.")
 
 # ===============================
 # SIDEBAR INPUTS
 # ===============================
-st.sidebar.header("Patient Info")
+st.sidebar.header("Patient Information")
 
 name = st.sidebar.text_input("Name")
 age = st.sidebar.number_input("Age", 1, 120)
@@ -150,94 +177,98 @@ hr = st.sidebar.slider("Heart Rate", 50, 150, 80)
 
 st.sidebar.header("Lifestyle")
 diet = st.sidebar.selectbox("Diet", ["Good", "Average", "Poor"])
-sleep = st.sidebar.slider("Sleep (hours)", 0, 12, 7)
+sleep = st.sidebar.slider("Sleep Hours", 0, 12, 7)
 exercise = st.sidebar.selectbox("Exercise", ["Regular", "Sometimes", "None"])
 
 # ===============================
-# TABS
+# MAIN UI
 # ===============================
-tab1, tab2, tab3 = st.tabs(["🧠 Analysis", "💬 Chat AI", "📜 History"])
+tab1, tab2, tab3 = st.tabs(["🧠 Analysis", "📜 History", "ℹ️ About"])
 
 # ===============================
-# TAB 1: ANALYSIS
+# TAB 1
 # ===============================
 with tab1:
 
-    col1, col2 = st.columns(2)
+    symptoms = st.text_area("Enter Symptoms", height=150)
 
-    with col1:
-        symptoms = st.text_area("Enter Symptoms", height=150)
-        run = st.button("Analyze Health")
+    if st.button("Analyze Health") and symptoms:
 
-    with col2:
+        with st.spinner("Analyzing patient data..."):
 
-        if run and symptoms:
+            ai_result = ai_analysis(name, age, gender, symptoms)
+            disease = symptom_prediction(symptoms)
+            risk = risk_level(symptoms, temp, hr)
+            immune = immunity_score(diet, sleep, exercise)
+            img = get_image(symptoms)
 
-            with st.spinner("Analyzing patient data..."):
+        # ALERT SYSTEM
+        if "🔴" in risk:
+            st.error("🚨 Emergency detected! Seek medical attention immediately.")
 
-                ai_report = analyze_ai(name, age, gender, symptoms)
-                risk = severity_score(symptoms, temp, hr)
-                imm = immunity_score(diet, sleep, exercise)
-                doc = doctor_recommendation(symptoms)
-                img = get_image(symptoms)
+        st.subheader("🧬 Possible Disease")
+        st.info(disease)
 
-            # ALERT SYSTEM
-            if "🔴" in risk:
-                st.error("🚨 Emergency detected! Seek immediate medical attention.")
-            elif "🟠" in risk:
-                st.warning("⚠️ High risk detected. Medical consultation recommended.")
+        st.subheader("⚠️ Risk Level")
+        st.markdown(f"### {risk}")
 
-            st.subheader("Risk Level")
-            st.markdown(f"### {risk}")
+        st.subheader("🛡️ Immunity Status")
+        st.markdown(f"### {immune}")
 
-            st.subheader("Immunity Status")
-            st.markdown(f"### {imm}")
+        st.subheader("👨‍⚕️ AI Medical Report")
+        st.write(ai_result)
 
-            st.subheader("Recommended Doctor")
-            st.info(doc)
+        st.image(img)
 
-            st.image(img)
+        st.download_button(
+            "Download Report",
+            ai_result,
+            file_name="medisense_report.txt"
+        )
 
-            st.subheader("AI Medical Report")
-            st.write(ai_report)
-
-            st.download_button(
-                "Download Report",
-                ai_report,
-                file_name="medisense_report.txt"
-            )
-
-            # Save history
-            st.session_state.history.append({
-                "time": str(datetime.datetime.now()),
-                "name": name,
-                "symptoms": symptoms,
-                "risk": risk,
-                "immunity": imm
-            })
+        # SAVE HISTORY
+        st.session_state.history.append({
+            "time": str(datetime.datetime.now()),
+            "name": name,
+            "symptoms": symptoms,
+            "disease": disease,
+            "risk": risk,
+            "immune": immune
+        })
 
 # ===============================
-# TAB 2: CHAT
+# TAB 2 HISTORY
 # ===============================
 with tab2:
 
-    chat_input = st.text_input("Ask MediSense AI Doctor")
-
-    if st.button("Send"):
-        if chat_input:
-            response = analyze_ai(name, age, gender, chat_input)
-            st.write("🤖 AI:", response)
-
-# ===============================
-# TAB 3: HISTORY
-# ===============================
-with tab3:
-
     if not st.session_state.history:
-        st.info("No history yet")
+        st.info("No history available")
     else:
         for h in reversed(st.session_state.history):
             with st.expander(f"{h['name']} | {h['time']}"):
                 st.write("Symptoms:", h["symptoms"])
+                st.write("Disease:", h["disease"])
                 st.write("Risk:", h["risk"])
-                st.write("Immunity:", h["immunity"])
+                st.write("Immunity:", h["immune"])
+
+# ===============================
+# TAB 3 ABOUT
+# ===============================
+with tab3:
+
+    st.markdown("""
+### MediSense AI
+
+AI-powered healthcare assistant combining:
+
+- Symptom-based disease prediction  
+- Risk analysis system  
+- Immunity scoring engine  
+- AI medical report generation  
+- Lifestyle health tracking  
+
+**Tech Stack:**
+- Streamlit  
+- Hugging Face Transformers  
+- PyTorch  
+""")
