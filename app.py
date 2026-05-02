@@ -1,37 +1,49 @@
 import streamlit as st
+import sqlite3
+import datetime
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from PIL import Image
 import pytesseract
 import speech_recognition as sr
-import sqlite3
-import datetime
 
-# =========================
-# CONFIG
-# =========================
-st.set_page_config(page_title="Hospital AI CDSS", layout="wide")
-st.title("🏥 Clinical Decision Support AI System")
+# ===============================
+# APP CONFIG
+# ===============================
+st.set_page_config(page_title="Hospital AI System", layout="wide")
+st.title("🏥 Hospital AI + Patient Management System")
 
-# =========================
-# DATABASE (PRODUCTION READY)
-# =========================
+# ===============================
+# DATABASE
+# ===============================
 conn = sqlite3.connect("hospital_ai.db", check_same_thread=False)
 c = conn.cursor()
 
 c.execute("""
-CREATE TABLE IF NOT EXISTS reports (
+CREATE TABLE IF NOT EXISTS patients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    time TEXT,
-    input_type TEXT,
-    data TEXT,
-    result TEXT
+    name TEXT,
+    age INTEGER,
+    gender TEXT,
+    created_at TEXT
 )
 """)
+
+c.execute("""
+CREATE TABLE IF NOT EXISTS history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_name TEXT,
+    input_type TEXT,
+    input_text TEXT,
+    result TEXT,
+    time TEXT
+)
+""")
+
 conn.commit()
 
-# =========================
-# LOAD MEDICAL AI MODEL
-# =========================
+# ===============================
+# MODEL LOAD
+# ===============================
 @st.cache_resource
 def load_model():
     model_name = "google/flan-t5-base"
@@ -41,132 +53,189 @@ def load_model():
 
 tokenizer, model = load_model()
 
-# =========================
-# MEDICAL ENGINE (CDSS CORE)
-# =========================
-def medical_engine(text):
+# ===============================
+# AI ENGINE (FIXED OUTPUT)
+# ===============================
+def analyze_ai(text):
     prompt = f"""
-You are a Clinical Decision Support System used in hospitals.
+You are a hospital AI assistant.
 
-Analyze:
+Analyze the following patient input:
 {text}
 
-Return STRICT JSON format:
-{{
-  "conditions": [],
-  "risk_level": "",
-  "advice": "",
-  "next_step": ""
-}}
+Return:
+1. Possible Conditions (max 3)
+2. Risk Level
+3. Advice
+4. Home Care
 """
 
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
-    outputs = model.generate(**inputs, max_length=300)
-
+    outputs = model.generate(**inputs, max_length=250)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# =========================
-# OCR ENGINE
-# =========================
-def ocr(image_file):
-    image = Image.open(image_file)
-    return pytesseract.image_to_string(image)
-
-# =========================
-# VOICE ENGINE (FILE BASED)
-# =========================
-def voice_to_text(file):
-    r = sr.Recognizer()
-    with sr.AudioFile(file) as source:
-        audio = r.record(source)
-    return r.recognize_google(audio)
-
-# =========================
-# SAVE TO DB
-# =========================
-def save(input_type, data, result):
+# ===============================
+# PATIENT SYSTEM
+# ===============================
+def add_patient(name, age, gender):
     c.execute(
-        "INSERT INTO reports (time, input_type, data, result) VALUES (?, ?, ?, ?)",
-        (str(datetime.datetime.now()), input_type, data, result)
+        "INSERT INTO patients (name, age, gender, created_at) VALUES (?, ?, ?, ?)",
+        (name, age, gender, str(datetime.datetime.now()))
     )
     conn.commit()
+    return c.lastrowid
 
-# =========================
-# UI TABS
-# =========================
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+def get_patients():
+    c.execute("SELECT * FROM patients ORDER BY id DESC")
+    return c.fetchall()
+
+def search_patient(name):
+    c.execute("SELECT * FROM patients WHERE name LIKE ?", ('%' + name + '%',))
+    return c.fetchall()
+
+# ===============================
+# OCR (SAFE)
+# ===============================
+def extract_text(image_file):
+    try:
+        image = Image.open(image_file)
+        return pytesseract.image_to_string(image)
+    except:
+        return ""
+
+# ===============================
+# VOICE INPUT
+# ===============================
+def voice_to_text(file):
+    r = sr.Recognizer()
+    try:
+        with sr.AudioFile(file) as source:
+            audio = r.record(source)
+        return r.recognize_google(audio)
+    except Exception as e:
+        return f"Voice Error: {e}"
+
+# ===============================
+# TABS
+# ===============================
+tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "🧑 Patient Info",
     "🧠 AI Diagnosis",
     "📷 Image Report",
     "🎤 Voice Input",
     "📷 Camera Scan",
-    "📊 Records"
+    "📜 History",
+    "📊 All Patients"
 ])
 
-# =========================
-# TAB 1 - TEXT AI
-# =========================
+# ===============================
+# 🧑 PATIENT INFO
+# ===============================
+with tab0:
+    st.subheader("Patient Registration")
+
+    name = st.text_input("Name")
+    age = st.number_input("Age", 1, 120, 25)
+    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+
+    if st.button("Register Patient"):
+        pid = add_patient(name, age, gender)
+        st.success(f"Patient Registered! ID: {pid}")
+
+    st.divider()
+
+    st.subheader("Search Patient")
+    search = st.text_input("Search Name")
+
+    if st.button("Search"):
+        results = search_patient(search)
+        for r in results:
+            st.write(f"ID: {r[0]} | {r[1]} | {r[2]} | {r[3]}")
+
+# ===============================
+# 🧠 AI DIAGNOSIS
+# ===============================
 with tab1:
-    text = st.text_area("Enter Symptoms")
+    symptoms = st.text_area("Enter Symptoms")
 
     if st.button("Analyze"):
-        result = medical_engine(text)
-        st.json(result)
-        save("text", text, result)
+        result = analyze_ai(symptoms)
 
-# =========================
-# TAB 2 - IMAGE REPORT
-# =========================
+        st.subheader("AI Result")
+        st.write(result)
+
+        c.execute(
+            "INSERT INTO history (patient_name, input_type, input_text, result, time) VALUES (?, ?, ?, ?, ?)",
+            (name, "text", symptoms, result, str(datetime.datetime.now()))
+        )
+        conn.commit()
+
+# ===============================
+# 📷 IMAGE REPORT
+# ===============================
 with tab2:
-    img = st.file_uploader("Upload Report Image")
+    file = st.file_uploader("Upload Image")
 
-    if img:
-        st.image(img)
-        text = ocr(img)
-        result = medical_engine(text)
+    if file:
+        st.image(file)
+
+        text = extract_text(file)
+        if not text:
+            text = "Medical image uploaded"
+
+        result = analyze_ai(text)
 
         st.write(text)
-        st.json(result)
+        st.write(result)
 
-        save("image", text, result)
-
-# =========================
-# TAB 3 - VOICE
-# =========================
+# ===============================
+# 🎤 VOICE
+# ===============================
 with tab3:
-    audio = st.file_uploader("Upload Voice (WAV)")
+    audio = st.file_uploader("Upload WAV")
 
     if audio:
         st.audio(audio)
-        text = voice_to_text(audio)
-        result = medical_engine(text)
 
-        st.write(text)
-        st.json(result)
+        if st.button("Convert"):
+            text = voice_to_text(audio)
+            result = analyze_ai(text)
 
-        save("voice", text, result)
+            st.write(text)
+            st.write(result)
 
-# =========================
-# TAB 4 - CAMERA
-# =========================
+# ===============================
+# 📷 CAMERA
+# ===============================
 with tab4:
-    cam = st.camera_input("Capture Patient Image")
+    cam = st.camera_input("Take Picture")
 
     if cam:
         st.image(cam)
-        text = ocr(cam)
-        result = medical_engine(text)
+
+        text = extract_text(cam)
+        if not text:
+            text = "Camera medical scan"
+
+        result = analyze_ai(text)
 
         st.write(result)
-        save("camera", "camera_image", result)
 
-# =========================
-# TAB 5 - DATABASE RECORDS
-# =========================
+# ===============================
+# 📜 HISTORY
+# ===============================
 with tab5:
-    st.subheader("Patient Records")
-
-    c.execute("SELECT * FROM reports ORDER BY id DESC")
+    c.execute("SELECT * FROM history ORDER BY id DESC")
     data = c.fetchall()
 
-    for row in data:
-        st.write(row)
+    for d in data:
+        st.write(d)
+
+# ===============================
+# 📊 PATIENT LIST
+# ===============================
+with tab6:
+    patients = get_patients()
+
+    for p in patients:
+        st.write(f"ID: {p[0]} | {p[1]} | Age: {p[2]} | Gender: {p[3]}")
