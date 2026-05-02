@@ -24,13 +24,13 @@ def load_model():
 tokenizer, model = load_model()
 
 # ===============================
-# SESSION STATE
+# SESSION
 # ===============================
 if "history" not in st.session_state:
     st.session_state.history = []
 
 # ===============================
-# HELPERS
+# IMAGE HELPERS
 # ===============================
 def get_image(symptoms):
     s = symptoms.lower()
@@ -44,8 +44,12 @@ def get_image(symptoms):
         return "https://source.unsplash.com/600x400/?cough"
     return "https://source.unsplash.com/600x400/?hospital"
 
+# ===============================
+# RISK ANALYSIS
+# ===============================
 def severity_score(symptoms, temp, hr):
     score = 0
+    s = symptoms.lower()
 
     if temp > 39:
         score += 3
@@ -55,10 +59,12 @@ def severity_score(symptoms, temp, hr):
     if hr > 120:
         score += 2
 
-    if "chest" in symptoms.lower():
+    if "chest" in s:
         score += 3
-    if "breath" in symptoms.lower():
+    if "breath" in s:
         score += 2
+    if "pain" in s:
+        score += 1
 
     if score >= 6:
         return "🔴 Emergency"
@@ -68,30 +74,33 @@ def severity_score(symptoms, temp, hr):
         return "🟡 Medium Risk"
     return "🟢 Low Risk"
 
-def immunity_score(diet, sleep, exercise):
-    score = 0
+# ===============================
+# MEDICATION SUGGESTION (NEW FEATURE)
+# ===============================
+def suggest_medication(symptoms):
+    s = symptoms.lower()
 
-    if diet == "Good":
-        score += 2
-    elif diet == "Average":
-        score += 1
+    meds = []
 
-    if sleep >= 7:
-        score += 2
-    elif sleep >= 5:
-        score += 1
+    if "fever" in s:
+        meds.append("Paracetamol (for fever relief)")
+    if "headache" in s:
+        meds.append("Ibuprofen (pain relief)")
+    if "cough" in s:
+        meds.append("Dextromethorphan syrup (dry cough)")
+    if "cold" in s:
+        meds.append("Antihistamine (like Loratadine)")
+    if "body pain" in s:
+        meds.append("Acetaminophen / Ibuprofen")
 
-    if exercise == "Regular":
-        score += 2
-    elif exercise == "Sometimes":
-        score += 1
+    if not meds:
+        return ["Consult doctor for proper prescription"]
 
-    if score >= 5:
-        return "🟢 Strong Immunity"
-    elif score >= 3:
-        return "🟡 Moderate Immunity"
-    return "🔴 Weak Immunity"
+    return meds
 
+# ===============================
+# DOCTOR SUGGESTION
+# ===============================
 def doctor_recommendation(symptoms):
     s = symptoms.lower()
     if "chest" in s:
@@ -104,9 +113,12 @@ def doctor_recommendation(symptoms):
         return "General Physician"
     return "General Physician"
 
+# ===============================
+# AI REPORT
+# ===============================
 def analyze_ai(name, age, gender, symptoms):
     prompt = f"""
-You are MediSense AI Medical Assistant.
+You are MediSense AI.
 
 Patient:
 Name: {name}
@@ -116,7 +128,7 @@ Gender: {gender}
 Symptoms:
 {symptoms}
 
-Give structured medical analysis:
+Give:
 - Possible Conditions (max 3)
 - Risk Level
 - Advice
@@ -128,15 +140,23 @@ Give structured medical analysis:
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 # ===============================
+# IMAGE ANALYSIS (SIMULATED CAMERA FEATURE)
+# ===============================
+def analyze_body_image(image_type):
+    if image_type == "Eyes":
+        return "Possible signs: fatigue, dehydration, or infection (non-diagnostic check)"
+    elif image_type == "Tongue":
+        return "Possible signs: dehydration, vitamin deficiency, or fever indicators"
+    return "No clear analysis available"
+
+# ===============================
 # UI HEADER
 # ===============================
 st.title("🏥 MediSense AI")
-st.caption("Clinical Decision Support + Lifestyle Health Intelligence System")
-
-st.warning("⚠️ Educational use only. Not a replacement for medical advice.")
+st.warning("Educational tool only. Not a medical diagnosis system.")
 
 # ===============================
-# SIDEBAR INPUTS
+# SIDEBAR
 # ===============================
 st.sidebar.header("Patient Info")
 
@@ -148,96 +168,84 @@ st.sidebar.header("Vitals")
 temp = st.sidebar.slider("Temperature (°C)", 35.0, 42.0, 37.0)
 hr = st.sidebar.slider("Heart Rate", 50, 150, 80)
 
-st.sidebar.header("Lifestyle")
-diet = st.sidebar.selectbox("Diet", ["Good", "Average", "Poor"])
-sleep = st.sidebar.slider("Sleep (hours)", 0, 12, 7)
-exercise = st.sidebar.selectbox("Exercise", ["Regular", "Sometimes", "None"])
-
 # ===============================
 # TABS
 # ===============================
-tab1, tab2, tab3 = st.tabs(["🧠 Analysis", "💬 Chat AI", "📜 History"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🧠 Analysis",
+    "💬 Chat",
+    "📷 Vision Check",
+    "📜 History"
+])
 
 # ===============================
-# TAB 1: ANALYSIS
+# TAB 1
 # ===============================
 with tab1:
+    symptoms = st.text_area("Enter Symptoms")
+    run = st.button("Analyze")
 
-    col1, col2 = st.columns(2)
+    if run and symptoms:
 
-    with col1:
-        symptoms = st.text_area("Enter Symptoms", height=150)
-        run = st.button("Analyze Health")
+        ai_report = analyze_ai(name, age, gender, symptoms)
+        risk = severity_score(symptoms, temp, hr)
+        meds = suggest_medication(symptoms)
+        doc = doctor_recommendation(symptoms)
 
-    with col2:
+        st.subheader("Risk Level")
+        st.write(risk)
 
-        if run and symptoms:
+        st.subheader("Recommended Doctor")
+        st.info(doc)
 
-            with st.spinner("Analyzing patient data..."):
+        st.subheader("Suggested Medication (Basic Guidance)")
+        for m in meds:
+            st.write("•", m)
 
-                ai_report = analyze_ai(name, age, gender, symptoms)
-                risk = severity_score(symptoms, temp, hr)
-                imm = immunity_score(diet, sleep, exercise)
-                doc = doctor_recommendation(symptoms)
-                img = get_image(symptoms)
+        st.subheader("AI Report")
+        st.write(ai_report)
 
-            # ALERT SYSTEM
-            if "🔴" in risk:
-                st.error("🚨 Emergency detected! Seek immediate medical attention.")
-            elif "🟠" in risk:
-                st.warning("⚠️ High risk detected. Medical consultation recommended.")
-
-            st.subheader("Risk Level")
-            st.markdown(f"### {risk}")
-
-            st.subheader("Immunity Status")
-            st.markdown(f"### {imm}")
-
-            st.subheader("Recommended Doctor")
-            st.info(doc)
-
-            st.image(img)
-
-            st.subheader("AI Medical Report")
-            st.write(ai_report)
-
-            st.download_button(
-                "Download Report",
-                ai_report,
-                file_name="medisense_report.txt"
-            )
-
-            # Save history
-            st.session_state.history.append({
-                "time": str(datetime.datetime.now()),
-                "name": name,
-                "symptoms": symptoms,
-                "risk": risk,
-                "immunity": imm
-            })
+        st.session_state.history.append({
+            "time": str(datetime.datetime.now()),
+            "name": name,
+            "symptoms": symptoms,
+            "risk": risk
+        })
 
 # ===============================
-# TAB 2: CHAT
+# TAB 2
 # ===============================
 with tab2:
-
-    chat_input = st.text_input("Ask MediSense AI Doctor")
+    chat_input = st.text_input("Ask AI Doctor")
 
     if st.button("Send"):
-        if chat_input:
-            response = analyze_ai(name, age, gender, chat_input)
-            st.write("🤖 AI:", response)
+        response = analyze_ai(name, age, gender, chat_input)
+        st.write(response)
 
 # ===============================
-# TAB 3: HISTORY
+# TAB 3 (VISION FEATURE)
 # ===============================
 with tab3:
+    st.subheader("Upload Eye / Tongue Image")
 
+    img_type = st.selectbox("Select Check Type", ["Eyes", "Tongue"])
+
+    camera = st.camera_input("Capture Image")
+
+    if camera:
+        st.image(camera)
+
+        result = analyze_body_image(img_type)
+
+        st.subheader("AI Visual Analysis (Non-Diagnostic)")
+        st.info(result)
+
+# ===============================
+# TAB 4
+# ===============================
+with tab4:
     if not st.session_state.history:
         st.info("No history yet")
     else:
         for h in reversed(st.session_state.history):
-            with st.expander(f"{h['name']} | {h['time']}"):
-                st.write("Symptoms:", h["symptoms"])
-                st.write("Risk:", h["risk"])
-                st.write("Immunity:", h["immunity"])
+            st.write(h)
